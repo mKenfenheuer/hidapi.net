@@ -81,7 +81,7 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PreBuildEvent>"C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\msbuild.exe" "$(SolutionDir)hidapi\windows\hidapi.vcxproj" /p:configuration=$(ConfigurationName) /p:Platform=x64
-cp "$(SolutionDir)hidapi\windows\x64\$(ConfigurationName)\hidapi.dll" $(ProjectDir)hidapi.dll</PreBuildEvent>
+    <PreBuildEvent>
+    </PreBuildEvent>
   </PropertyGroup>
 </Project>

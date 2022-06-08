@@ -19,7 +19,7 @@ namespace hidapi
         private long MillisecondsSinceEpoch => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         public bool IsDeviceValid => _deviceHandle != IntPtr.Zero;
         public bool Reading => _reading;
-        public event EventHandler<HidDeviceInputReceivedEventArgs> OnInputReceived;
+        public Func<HidDeviceInputReceivedEventArgs, Task> OnInputReceived;
         public HidDevice(ushort vendorId, ushort productId, ushort inputBufferLen = 64)
         {
             _vid = vendorId;
@@ -118,15 +118,12 @@ namespace hidapi
             int len = 0;
             while (_reading)
             {
-                long start = MillisecondsSinceEpoch;
                 len = Read(buffer);
                 if (len > 0)
                 {
-                    _ = Task.Run(() => OnInputReceived?.Invoke(this, new HidDeviceInputReceivedEventArgs(this, buffer)));
+                    if (OnInputReceived != null)
+                        _ = OnInputReceived(new HidDeviceInputReceivedEventArgs(this, buffer));
                 }
-                long duration = MillisecondsSinceEpoch - start;
-                if (duration < 5)
-                    Thread.Sleep((int)(5 - duration));
             }
         }
         public Task WriteAsync(byte[] data) => Task.Run(() => Write(data));
