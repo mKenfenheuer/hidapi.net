@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace hidapi
@@ -14,7 +15,7 @@ namespace hidapi
         private IntPtr _deviceHandle;
         private object _lock = new object();
         private bool _reading = false;
-        private Task _readTask;
+        private Thread _readThread;
         private long MillisecondsSinceEpoch => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         public bool IsDeviceValid => _deviceHandle != IntPtr.Zero;
         public bool Reading => _reading;
@@ -85,24 +86,55 @@ namespace hidapi
 
         }
 
-        private async Task ReadLoop()
+        public Task<byte[]> RequestFeatureReportAsync(byte[] request) => Task.Run(() => RequestFeatureReport(request));
+        public byte[] RequestFeatureReport(byte[] request)
+        {
+            if (request.Length > _inputBufferLen)
+                throw new ArgumentException("Request length is greater than input buffer length.");
+
+            ThrowIfDeviceInvalid();
+
+            byte[] request_full = new byte[_inputBufferLen + 1];
+            Array.Copy(request, 0, request_full, 1, request.Length);
+            byte[] response = new byte[_inputBufferLen + 1];
+
+            int err = HidApiNative.hid_send_feature_report(_deviceHandle, request_full, (uint)(_inputBufferLen + 1));
+            if (err < 0)
+            {
+                throw new Exception($"Could not send report to hid device. Error: {err}");
+            }
+            err = HidApiNative.hid_get_feature_report(_deviceHandle, response, (uint)(_inputBufferLen + 1));
+            if (err < 0)
+            {
+                throw new Exception($"Could not get report from hid device. Error: {err}");
+            }
+
+            return response;
+        }
+
+        private void ReadLoop()
         {
             byte[] buffer = new byte[_inputBufferLen];
             int len = 0;
             while (_reading)
             {
                 long start = MillisecondsSinceEpoch;
-                len = await ReadAsync(buffer);
+                len = Read(buffer);
                 if (len > 0)
-                    OnInputReceived?.Invoke(this, new HidDeviceInputReceivedEventArgs(this, buffer));
+                {
+                    _ = Task.Run(() => OnInputReceived?.Invoke(this, new HidDeviceInputReceivedEventArgs(this, buffer)));
+                }
                 long duration = MillisecondsSinceEpoch - start;
-                if (duration < 10)
-                    await Task.Delay((int)(10 - duration));
+                if (duration < 5)
+                    Thread.Sleep((int)(5 - duration));
             }
         }
         public Task WriteAsync(byte[] data) => Task.Run(() => Write(data));
         public void Write(byte[] data)
         {
+            if (data.Length > _inputBufferLen)
+                throw new ArgumentException("Data length is greater than input buffer length.");
+
             ThrowIfDeviceInvalid();
             byte[] buffer = new byte[_inputBufferLen];
             Array.Copy(data, buffer, data.Length);
@@ -116,7 +148,8 @@ namespace hidapi
         public void BeginRead()
         {
             _reading = true;
-            _readTask = Task.Run(() => ReadLoop());
+            _readThread = new Thread(new ThreadStart(ReadLoop));
+            _readThread.Start();
         }
 
         public void EndRead()
@@ -124,9 +157,14 @@ namespace hidapi
             _reading = false;
         }
 
+        public void Close()
+        {
+            HidApiNative.hid_close(_deviceHandle);
+        }
+
         public void Dispose()
         {
-            throw new NotImplementedException();
+            Close();
         }
     }
 }
