@@ -146,6 +146,7 @@ namespace hidapi
         {
             _reading = true;
             _readThread = new Thread(new ThreadStart(ReadLoop));
+            _readThread.IsBackground = true;
             _readThread.Start();
         }
 
